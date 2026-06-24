@@ -3,9 +3,9 @@ import pandas as pd
 import os
 from datetime import date
 
-# -----------------------------
+# ==========================================
 # Configuration
-# -----------------------------
+# ==========================================
 FILE_NAME = "transactions.xlsx"
 
 st.set_page_config(
@@ -14,31 +14,56 @@ st.set_page_config(
     layout="wide"
 )
 
-# -----------------------------
-# Create Excel file if missing
-# -----------------------------
+# ==========================================
+# Create Excel file if it doesn't exist
+# ==========================================
 if not os.path.exists(FILE_NAME):
     df = pd.DataFrame(
         columns=["ID", "Date", "Description", "Debit", "Credit"]
     )
     df.to_excel(FILE_NAME, index=False)
 
-# -----------------------------
+# ==========================================
 # Load Data
-# -----------------------------
-df = pd.read_excel(FILE_NAME)
+# ==========================================
+try:
+    df = pd.read_excel(FILE_NAME)
+except Exception:
+    df = pd.DataFrame(
+        columns=["ID", "Date", "Description", "Debit", "Credit"]
+    )
 
-# -----------------------------
+# ==========================================
+# Ensure Required Columns Exist
+# ==========================================
+required_columns = ["ID", "Date", "Description", "Debit", "Credit"]
+
+for col in required_columns:
+    if col not in df.columns:
+        if col == "ID":
+            df[col] = range(1, len(df) + 1)
+        elif col in ["Debit", "Credit"]:
+            df[col] = 0.0
+        else:
+            df[col] = ""
+
+# Reorder columns
+df = df[required_columns]
+
+# Save corrected structure if needed
+df.to_excel(FILE_NAME, index=False)
+
+# ==========================================
 # Title
-# -----------------------------
+# ==========================================
 st.title("💰 Daily Debit & Credit Tracker")
 
-# -----------------------------
-# Add Transaction Form
-# -----------------------------
+# ==========================================
+# Add Transaction
+# ==========================================
 st.header("Add New Transaction")
 
-with st.form("add_transaction"):
+with st.form("transaction_form"):
 
     trans_date = st.date_input(
         "Date",
@@ -63,18 +88,22 @@ with st.form("add_transaction"):
         step=1.0
     )
 
-    submitted = st.form_submit_button("Add Transaction")
+    submit = st.form_submit_button("Add Transaction")
 
-    if submitted:
+    if submit:
 
         if description.strip() == "":
             st.error("Please enter a description.")
+
         else:
 
             if len(df) == 0:
                 new_id = 1
             else:
-                new_id = int(df["ID"].max()) + 1
+                new_id = int(pd.to_numeric(
+                    df["ID"],
+                    errors="coerce"
+                ).max()) + 1
 
             new_row = pd.DataFrame([{
                 "ID": new_id,
@@ -91,85 +120,95 @@ with st.form("add_transaction"):
 
             df.to_excel(FILE_NAME, index=False)
 
-            st.success("Transaction added successfully!")
+            st.success("Transaction Added Successfully!")
             st.rerun()
 
-# -----------------------------
+# ==========================================
 # Summary
-# -----------------------------
+# ==========================================
 st.header("Summary")
 
-total_debit = pd.to_numeric(
+df["Debit"] = pd.to_numeric(
     df["Debit"],
     errors="coerce"
-).fillna(0).sum()
+).fillna(0)
 
-total_credit = pd.to_numeric(
+df["Credit"] = pd.to_numeric(
     df["Credit"],
     errors="coerce"
-).fillna(0).sum()
+).fillna(0)
 
+total_debit = df["Debit"].sum()
+total_credit = df["Credit"].sum()
 balance = total_credit - total_debit
 
 col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.metric("Total Debit", f"{total_debit:,.2f}")
+col1.metric(
+    "Total Debit",
+    f"{total_debit:,.2f}"
+)
 
-with col2:
-    st.metric("Total Credit", f"{total_credit:,.2f}")
+col2.metric(
+    "Total Credit",
+    f"{total_credit:,.2f}"
+)
 
-with col3:
-    st.metric("Balance", f"{balance:,.2f}")
+col3.metric(
+    "Balance",
+    f"{balance:,.2f}"
+)
 
-# -----------------------------
-# Editable Transactions Table
-# -----------------------------
+# ==========================================
+# Transaction Table
+# ==========================================
 st.header("Transactions")
 
-if len(df) > 0:
+st.info(
+    "You can edit any cell directly. "
+    "To delete a transaction, remove its row and click Save Changes."
+)
 
-    edited_df = st.data_editor(
-        df,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="editor"
+edited_df = st.data_editor(
+    df,
+    use_container_width=True,
+    num_rows="dynamic",
+    key="transaction_editor"
+)
+
+# ==========================================
+# Save Changes
+# ==========================================
+if st.button("💾 Save Changes"):
+
+    edited_df["Debit"] = pd.to_numeric(
+        edited_df["Debit"],
+        errors="coerce"
+    ).fillna(0)
+
+    edited_df["Credit"] = pd.to_numeric(
+        edited_df["Credit"],
+        errors="coerce"
+    ).fillna(0)
+
+    # Reassign IDs to keep them clean
+    edited_df["ID"] = range(
+        1,
+        len(edited_df) + 1
     )
 
-    col_save, col_refresh = st.columns(2)
+    edited_df.to_excel(
+        FILE_NAME,
+        index=False
+    )
 
-    with col_save:
-        if st.button("💾 Save Changes"):
+    st.success("Changes Saved Successfully!")
+    st.rerun()
 
-            edited_df["Debit"] = pd.to_numeric(
-                edited_df["Debit"],
-                errors="coerce"
-            ).fillna(0)
-
-            edited_df["Credit"] = pd.to_numeric(
-                edited_df["Credit"],
-                errors="coerce"
-            ).fillna(0)
-
-            edited_df.to_excel(
-                FILE_NAME,
-                index=False
-            )
-
-            st.success("Changes saved successfully!")
-            st.rerun()
-
-    with col_refresh:
-        if st.button("🔄 Refresh"):
-            st.rerun()
-
-else:
-    st.info("No transactions found.")
-
-# -----------------------------
-# Download Excel File
-# -----------------------------
-st.header("Download Data")
+# ==========================================
+# Download Excel
+# ==========================================
+st.header("Download Records")
 
 with open(FILE_NAME, "rb") as file:
     st.download_button(
